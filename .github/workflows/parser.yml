@@ -1,0 +1,109 @@
+name: Telegram Parser
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "How many calendar days to parse"
+        required: false
+        default: "7"
+      include_today:
+        description: "Include today in the period"
+        required: false
+        default: "false"
+      save_debug:
+        description: "Save debug JSON too"
+        required: false
+        default: "true"
+
+jobs:
+  run-parser:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f requirements_telegram_parser.txt ]; then
+            pip install -r requirements_telegram_parser.txt
+          else
+            pip install telethon pandas openpyxl fastapi "uvicorn[standard]"
+          fi
+
+      - name: Restore Telegram session file
+        shell: bash
+        run: |
+          mkdir -p sessions
+          echo "${{ secrets.TELEGRAM_SESSION_B64 }}" | base64 -d > sessions/telegram_parser_session.session
+
+      - name: Inject secrets into config.py
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_PHONE: ${{ secrets.TG_PHONE }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path("config.py")
+          text = path.read_text(encoding="utf-8")
+
+          text = re.sub(r"^API_ID\s*=.*$", f"API_ID = {os.environ['TG_API_ID']}", text, flags=re.MULTILINE)
+          text = re.sub(r"^API_HASH\s*=.*$", f'API_HASH = "{os.environ["TG_API_HASH"]}"', text, flags=re.MULTILINE)
+          text = re.sub(r"^PHONE\s*=.*$", f'PHONE = "{os.environ["TG_PHONE"]}"', text, flags=re.MULTILINE)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Run parser
+        shell: bash
+        run: |
+          mkdir -p output
+          mkdir -p debug
+
+          CMD="python main.py --format json --days ${{ github.event.inputs.days || '7' }}"
+
+          if [ "${{ github.event.inputs.include_today || 'false' }}" = "true" ]; then
+            CMD="$CMD --include-today"
+          fi
+
+          if [ "${{ github.event.inputs.save_debug || 'true' }}" = "true" ]; then
+            CMD="$CMD --save-debug"
+          fi
+
+          echo "Running: $CMD"
+          eval "$CMD"
+
+      - name: Show generated files
+        shell: bash
+        run: |
+          echo "Output files:"
+          ls -la output || true
+          echo "Debug files:"
+          ls -la debug || true
+
+      - name: Upload parser artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-parser-json-${{ github.run_id }}
+          path: |
+            output/*.json
+            debug/*.json
+          if-no-files-found: error
