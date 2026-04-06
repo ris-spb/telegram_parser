@@ -12,9 +12,9 @@ on:
         required: false
         default: "false"
       save_debug:
-        description: "Save debug JSON too"
+        description: "Legacy input, kept for compatibility"
         required: false
-        default: "true"
+        default: "false"
 
 jobs:
   run-parser:
@@ -76,16 +76,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p output
-          mkdir -p debug
 
-          CMD="python main.py --format json --days ${{ github.event.inputs.days || '7' }}"
+          CMD="python main.py --days ${{ github.event.inputs.days || '7' }}"
 
           if [ "${{ github.event.inputs.include_today || 'false' }}" = "true" ]; then
             CMD="$CMD --include-today"
-          fi
-
-          if [ "${{ github.event.inputs.save_debug || 'true' }}" = "true" ]; then
-            CMD="$CMD --save-debug"
           fi
 
           echo "Running: $CMD"
@@ -96,14 +91,10 @@ jobs:
         run: |
           echo "Output files:"
           ls -la output || true
-          echo "Debug files:"
-          ls -la debug || true
 
       - name: Upload parser artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-parser-json-${{ github.run_id }}
-          path: |
-            output/*.json
-            debug/*.json
+          name: telegram-parser-excel-${{ github.run_id }}
+          path: output/*.xlsx
           if-no-files-found: error
