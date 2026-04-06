@@ -6,7 +6,7 @@ on:
       days:
         description: "How many calendar days to parse"
         required: false
-        default: "7"
+        default: "1"
       include_today:
         description: "Include today in the period"
         required: false
